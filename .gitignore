@@ -1,0 +1,20 @@
+# build output
+build/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.exe
+*.out
+
+# editor / OS cruft
+.vscode/
+.idea/
+.DS_Store
+*.swp
+.Rhistory
+.claude/settings.local.json
+
+# generated / scratch output (root-level snapshot scratch, not docs/scope.png)
+/scope.png
+*.csv
