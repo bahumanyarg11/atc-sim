@@ -815,7 +815,7 @@ int run_app(uint64_t seed, int num_runways, int num_gates,
 
     Layout lay = compute_layout();
     Scope  sc  = scope_geometry(lay.radar);
-    double speed = 25.0;
+    double speed = 1.0;
     bool   paused = false, help = false;
     float  sweep = 0.0f;
     int    selected = -1;
