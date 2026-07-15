@@ -108,105 +108,113 @@ static void test_rng_determinism(void)
 static void test_sim_determinism(void)
 {
     printf("[sim determinism]\n");
-    Simulation s1, s2;
-    sim_init(&s1, 777, 2, 8, 1.4, 600.0);
-    sim_init(&s2, 777, 2, 8, 1.4, 600.0);
-    sim_run_to_end(&s1);
-    sim_run_to_end(&s2);
+    /* Simulation embeds a MAX_FLIGHTS-sized array; heap-allocate to avoid
+     * blowing the default thread stack when two are live at once. */
+    Simulation *s1 = malloc(sizeof(Simulation));
+    Simulation *s2 = malloc(sizeof(Simulation));
+    sim_init(s1, 777, 2, 8, 1.4, 600.0);
+    sim_init(s2, 777, 2, 8, 1.4, 600.0);
+    sim_run_to_end(s1);
+    sim_run_to_end(s2);
 
-    CHECK(s1.stats.flights_spawned  == s2.stats.flights_spawned,  "spawned equal");
-    CHECK(s1.stats.flights_departed == s2.stats.flights_departed, "departed equal");
-    CHECK(s1.stats.events_processed == s2.stats.events_processed, "event count equal");
-    CHECK(fabs(s1.now - s2.now) < 1e-9, "final clock equal");
-    sim_free(&s1);
-    sim_free(&s2);
+    CHECK(s1->stats.flights_spawned  == s2->stats.flights_spawned,  "spawned equal");
+    CHECK(s1->stats.flights_departed == s2->stats.flights_departed, "departed equal");
+    CHECK(s1->stats.events_processed == s2->stats.events_processed, "event count equal");
+    CHECK(fabs(s1->now - s2->now) < 1e-9, "final clock equal");
+    sim_free(s1);
+    sim_free(s2);
+    free(s1);
+    free(s2);
 }
 
 static void test_sim_conservation(void)
 {
     printf("[sim flow conservation]\n");
-    Simulation s;
-    sim_init(&s, 2024, 2, 8, 1.5, 800.0);
-    sim_run_to_end(&s);
+    Simulation *s = malloc(sizeof(Simulation));
+    sim_init(s, 2024, 2, 8, 1.5, 800.0);
+    sim_run_to_end(s);
 
     /* every spawned aircraft must end DONE or LOST                    */
     int accounted = 0;
-    for (int i = 0; i < s.flight_count; i++) {
-        AircraftState st = s.flights[i].state;
+    for (int i = 0; i < s->flight_count; i++) {
+        AircraftState st = s->flights[i].state;
         if (st == AC_DONE || st == AC_LOST) accounted++;
     }
-    CHECK(accounted == s.flight_count, "all aircraft terminate cleanly");
-    CHECK(s.stats.flights_departed + s.stats.flights_lost == s.stats.flights_spawned,
+    CHECK(accounted == s->flight_count, "all aircraft terminate cleanly");
+    CHECK(s->stats.flights_departed + s->stats.flights_lost == s->stats.flights_spawned,
           "departed + lost == spawned");
     printf("    spawned=%d departed=%d lost=%d emerg=%d events=%ld\n",
-           s.stats.flights_spawned, s.stats.flights_departed,
-           s.stats.flights_lost, s.stats.emergencies, s.stats.events_processed);
-    sim_free(&s);
+           s->stats.flights_spawned, s->stats.flights_departed,
+           s->stats.flights_lost, s->stats.emergencies, s->stats.events_processed);
+    sim_free(s);
+    free(s);
 }
 
 static void test_sim_saturation(void)
 {
     printf("[sim saturation: emergencies + losses + conservation]\n");
-    Simulation s;
-    sim_init(&s, 3, 1, 4, 0.3, 600.0);   /* deliberately overwhelmed   */
-    sim_run_to_end(&s);
+    Simulation *s = malloc(sizeof(Simulation));
+    sim_init(s, 3, 1, 4, 0.3, 600.0);   /* deliberately overwhelmed   */
+    sim_run_to_end(s);
 
     int accounted = 0;
-    for (int i = 0; i < s.flight_count; i++) {
-        AircraftState st = s.flights[i].state;
+    for (int i = 0; i < s->flight_count; i++) {
+        AircraftState st = s->flights[i].state;
         if (st == AC_DONE || st == AC_LOST) accounted++;
     }
-    CHECK(accounted == s.flight_count, "all aircraft terminate under saturation");
-    CHECK(s.stats.flights_departed + s.stats.flights_lost == s.stats.flights_spawned,
+    CHECK(accounted == s->flight_count, "all aircraft terminate under saturation");
+    CHECK(s->stats.flights_departed + s->stats.flights_lost == s->stats.flights_spawned,
           "departed + lost == spawned under saturation");
-    CHECK(s.stats.emergencies > 0, "emergencies fire under saturation");
-    CHECK(s.stats.flights_lost > 0, "fuel-starved aircraft are lost under saturation");
+    CHECK(s->stats.emergencies > 0, "emergencies fire under saturation");
+    CHECK(s->stats.flights_lost > 0, "fuel-starved aircraft are lost under saturation");
     printf("    spawned=%d departed=%d lost=%d emerg=%d\n",
-           s.stats.flights_spawned, s.stats.flights_departed,
-           s.stats.flights_lost, s.stats.emergencies);
-    sim_free(&s);
+           s->stats.flights_spawned, s->stats.flights_departed,
+           s->stats.flights_lost, s->stats.emergencies);
+    sim_free(s);
+    free(s);
 }
 
 static void test_sim_commands(void)
 {
     printf("[sim controller commands + diversion conservation]\n");
-    Simulation s;
-    sim_init(&s, 123, 1, 2, 0.5, 400.0);   /* single runway -> holdings */
+    Simulation *s = malloc(sizeof(Simulation));
+    sim_init(s, 123, 1, 2, 0.5, 400.0);   /* single runway -> holdings */
 
     /* advance until some traffic is airborne and divertable */
     int target = -1;
-    for (int i = 0; i < 400 && sim_step(&s); i++) {
-        for (int j = 0; j < s.flight_count; j++)
-            if (sim_can_divert(&s, j)) { target = j; break; }
+    for (int i = 0; i < 400 && sim_step(s); i++) {
+        for (int j = 0; j < s->flight_count; j++)
+            if (sim_can_divert(s, j)) { target = j; break; }
         if (target >= 0) break;
     }
     CHECK(target >= 0, "found a divertable flight in flight");
 
     if (target >= 0) {
-        int before = s.stats.flights_diverted;
-        sim_cmd_divert(&s, target);
-        CHECK(s.flights[target].state == AC_DIVERTED, "divert sets DIVERTED state");
-        CHECK(s.stats.flights_diverted == before + 1, "divert is tallied");
+        int before = s->stats.flights_diverted;
+        sim_cmd_divert(s, target);
+        CHECK(s->flights[target].state == AC_DIVERTED, "divert sets DIVERTED state");
+        CHECK(s->stats.flights_diverted == before + 1, "divert is tallied");
         /* a terminal flight ignores further commands */
-        sim_cmd_prioritize(&s, target);
-        CHECK(s.flights[target].state == AC_DIVERTED, "terminal flight ignores commands");
+        sim_cmd_prioritize(s, target);
+        CHECK(s->flights[target].state == AC_DIVERTED, "terminal flight ignores commands");
     }
 
-    sim_run_to_end(&s);
+    sim_run_to_end(s);
 
     int accounted = 0;
-    for (int i = 0; i < s.flight_count; i++) {
-        AircraftState st = s.flights[i].state;
+    for (int i = 0; i < s->flight_count; i++) {
+        AircraftState st = s->flights[i].state;
         if (st == AC_DONE || st == AC_LOST || st == AC_DIVERTED) accounted++;
     }
-    CHECK(accounted == s.flight_count, "all aircraft terminate (incl. diverted)");
-    CHECK(s.stats.flights_departed + s.stats.flights_lost +
-          s.stats.flights_diverted == s.stats.flights_spawned,
+    CHECK(accounted == s->flight_count, "all aircraft terminate (incl. diverted)");
+    CHECK(s->stats.flights_departed + s->stats.flights_lost +
+          s->stats.flights_diverted == s->stats.flights_spawned,
           "departed + lost + diverted == spawned");
     printf("    spawned=%d departed=%d lost=%d diverted=%d go_arounds=%d score=%.0f\n",
-           s.stats.flights_spawned, s.stats.flights_departed, s.stats.flights_lost,
-           s.stats.flights_diverted, s.stats.go_arounds, sim_score(&s));
-    sim_free(&s);
+           s->stats.flights_spawned, s->stats.flights_departed, s->stats.flights_lost,
+           s->stats.flights_diverted, s->stats.go_arounds, sim_score(s));
+    sim_free(s);
+    free(s);
 }
 
 int main(void)

@@ -262,6 +262,16 @@ ctest --test-dir build --output-on-failure
 ./build/test_core
 ```
 
+On Windows (multi-config generators like Visual Studio), pass the config
+explicitly, and the binary lands under `Release\`:
+
+```sh
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+# or directly:
+build\Release\test_core.exe
+```
+
 Covered: heap ordering and tie-breaking, a 100k-event heap stress check, PRNG
 determinism, run-to-run reproducibility, and flow conservation under both
 normal and saturated load.
